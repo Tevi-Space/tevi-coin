@@ -1,0 +1,17 @@
+[package]
+name = "TeviCoin"
+version = "1.0.0"
+authors = []
+
+[addresses]
+TeviCoin = "_"
+
+[dev-addresses]
+
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-framework.git"
+rev = "mainnet"
+subdir = "aptos-framework"
+
+[dev-dependencies]
