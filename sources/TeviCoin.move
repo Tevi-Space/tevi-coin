@@ -22,14 +22,12 @@ module TeviCoin::TeviCoin {
     const ENOT_OWNER: u64 = 1;
     /// The Tevi Coin is paused.
     const EPAUSED: u64 = 2;
-    /// Cannot exceed total supply
-    const EEXCEED_TOTAL_SUPPLY: u64 = 3;
 
     const ASSET_SYMBOL: vector<u8> = b"TEVI";
     const DECIMALS: u8 = 8;
     
     /// Total supply of 100 billion tokens with 8 decimals (100_000_000_000 * 10^8)
-    const TOTAL_SUPPLY: u64 = 100_000_000_000_0000_0000;
+    const TOTAL_SUPPLY: u128 = 100_000_000_000_0000_0000;
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     /// Hold refs to control the minting, transfer and burning of fungible assets.
@@ -91,7 +89,7 @@ module TeviCoin::TeviCoin {
         let constructor_ref = &object::create_named_object(admin, ASSET_SYMBOL);
         primary_fungible_store::create_primary_store_enabled_fungible_asset(
             constructor_ref,
-            option::none(),
+            option::some(TOTAL_SUPPLY),
             utf8(b"TEVI Coin"), /* name */
             utf8(ASSET_SYMBOL), /* symbol */
             DECIMALS, /* decimals */
@@ -172,11 +170,6 @@ module TeviCoin::TeviCoin {
         let admin_addr = signer::address_of(admin);
         let asset = get_metadata();
         let managed_fungible_asset = authorized_borrow_refs(admin, asset);
-        
-        // Check total supply would not be exceeded
-        let current_supply = fungible_asset::supply(asset);
-        assert!(option::is_some(&current_supply), error::invalid_state(EEXCEED_TOTAL_SUPPLY));
-        assert!(*option::borrow(&current_supply) + (amount as u128) <= (TOTAL_SUPPLY as u128), error::invalid_state(EEXCEED_TOTAL_SUPPLY));
         
         let to_wallet = primary_fungible_store::ensure_primary_store_exists(to, asset);
         let fa = fungible_asset::mint(&managed_fungible_asset.mint_ref, amount);
