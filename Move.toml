@@ -1,6 +1,7 @@
 [package]
 name = "TeviCoin"
 version = "1.0.0"
+upgrade_policy = "compatible"
 authors = []
 
 [addresses]

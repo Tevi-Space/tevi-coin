@@ -55,7 +55,7 @@ module TeviCoin::TeviCoin_test {
     }
 
     #[test(creator = @TeviCoin)]
-    #[expected_failure(abort_code = 0x30003, location = TeviCoin)]
+    #[expected_failure(abort_code = 0x20005, location = fungible_asset)]
     /// Test that minting beyond total supply fails
     fun test_mint_exceeds_total_supply(creator: &signer) {
         let (creator_address, _) = TeviCoin::setup_test(creator);

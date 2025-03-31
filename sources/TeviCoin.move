@@ -12,6 +12,7 @@ module TeviCoin::TeviCoin {
     use aptos_framework::primary_fungible_store;
     use aptos_framework::function_info;
     use aptos_framework::dispatchable_fungible_asset;
+    use aptos_framework::event;
     use std::error;
     use std::signer;
     use std::string::{Self, utf8};
@@ -21,14 +22,12 @@ module TeviCoin::TeviCoin {
     const ENOT_OWNER: u64 = 1;
     /// The Tevi Coin is paused.
     const EPAUSED: u64 = 2;
-    /// Cannot exceed total supply
-    const EEXCEED_TOTAL_SUPPLY: u64 = 3;
 
     const ASSET_SYMBOL: vector<u8> = b"TEVI";
     const DECIMALS: u8 = 8;
     
     /// Total supply of 100 billion tokens with 8 decimals (100_000_000_000 * 10^8)
-    const TOTAL_SUPPLY: u64 = 100_000_000_000_0000_0000;
+    const TOTAL_SUPPLY: u128 = 100_000_000_000_0000_0000;
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     /// Hold refs to control the minting, transfer and burning of fungible assets.
@@ -45,12 +44,52 @@ module TeviCoin::TeviCoin {
         paused: bool,
     }
 
+    #[event]
+    struct MintEvent has drop, store {
+        admin: address,
+        to: address,
+        amount: u64,
+    }
+
+    #[event]
+    struct BurnEvent has drop, store {
+        admin: address,
+        from: address,
+        amount: u64,
+    }
+
+    #[event]
+    struct TransferEvent has drop, store {
+        admin: address,
+        from: address,
+        to: address,
+        amount: u64,
+    }
+
+    #[event]
+    struct FreezeAccountEvent has drop, store {
+        admin: address,
+        account: address,
+    }
+
+    #[event]
+    struct UnfreezeAccountEvent has drop, store {
+        admin: address,
+        account: address,
+    }
+
+    #[event]
+    struct SetPauseEvent has drop, store {
+        admin: address,
+        paused: bool,
+    }
+
     /// Initialize metadata object and store the refs.
     fun init_module(admin: &signer) {
         let constructor_ref = &object::create_named_object(admin, ASSET_SYMBOL);
         primary_fungible_store::create_primary_store_enabled_fungible_asset(
             constructor_ref,
-            option::none(),
+            option::some(TOTAL_SUPPLY),
             utf8(b"TEVI Coin"), /* name */
             utf8(ASSET_SYMBOL), /* symbol */
             DECIMALS, /* decimals */
@@ -128,60 +167,101 @@ module TeviCoin::TeviCoin {
 
     /// Mint as the owner of metadata object.
     public entry fun mint(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
+        let admin_addr = signer::address_of(admin);
         let asset = get_metadata();
         let managed_fungible_asset = authorized_borrow_refs(admin, asset);
-        
-        // Check total supply would not be exceeded
-        let current_supply = fungible_asset::supply(asset);
-        assert!(option::is_some(&current_supply), error::invalid_state(EEXCEED_TOTAL_SUPPLY));
-        assert!(*option::borrow(&current_supply) + (amount as u128) <= (TOTAL_SUPPLY as u128), error::invalid_state(EEXCEED_TOTAL_SUPPLY));
         
         let to_wallet = primary_fungible_store::ensure_primary_store_exists(to, asset);
         let fa = fungible_asset::mint(&managed_fungible_asset.mint_ref, amount);
         fungible_asset::deposit_with_ref(&managed_fungible_asset.transfer_ref, to_wallet, fa);
+        
+        // Emit mint event
+        event::emit(MintEvent {
+            admin: admin_addr,
+            to,
+            amount,
+        });
     }
 
     /// Transfer as the owner of metadata object ignoring `frozen` field.
     public entry fun transfer(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset, State {
+        let admin_addr = signer::address_of(admin);
         let asset = get_metadata();
         let transfer_ref = &authorized_borrow_refs(admin, asset).transfer_ref;
         let from_wallet = primary_fungible_store::primary_store(from, asset);
         let to_wallet = primary_fungible_store::ensure_primary_store_exists(to, asset);
         let fa = withdraw(from_wallet, amount, transfer_ref);
         deposit(to_wallet, fa, transfer_ref);
+
+        // Emit transfer event
+        event::emit(TransferEvent {
+            admin: admin_addr,
+            from,
+            to,
+            amount,
+        });
     }
 
     /// Burn fungible assets as the owner of metadata object.
     public entry fun burn(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
+        let admin_addr = signer::address_of(admin);
         let asset = get_metadata();
         let burn_ref = &authorized_borrow_refs(admin, asset).burn_ref;
         let from_wallet = primary_fungible_store::primary_store(from, asset);
         fungible_asset::burn_from(burn_ref, from_wallet, amount);
+
+        // Emit burn event
+        event::emit(BurnEvent {
+            admin: admin_addr,
+            from,
+            amount,
+        });
     }
 
     /// Freeze an account so it cannot transfer or receive fungible assets.
     public entry fun freeze_account(admin: &signer, account: address) acquires ManagedFungibleAsset {
+        let admin_addr = signer::address_of(admin);
         let asset = get_metadata();
         let transfer_ref = &authorized_borrow_refs(admin, asset).transfer_ref;
         let wallet = primary_fungible_store::ensure_primary_store_exists(account, asset);
         fungible_asset::set_frozen_flag(transfer_ref, wallet, true);
+
+        // Emit freeze account event
+        event::emit(FreezeAccountEvent {
+            admin: admin_addr,
+            account,
+        });
     }
 
     /// Unfreeze an account so it can transfer or receive fungible assets.
     public entry fun unfreeze_account(admin: &signer, account: address) acquires ManagedFungibleAsset {
+        let admin_addr = signer::address_of(admin);
         let asset = get_metadata();
         let transfer_ref = &authorized_borrow_refs(admin, asset).transfer_ref;
         let wallet = primary_fungible_store::ensure_primary_store_exists(account, asset);
         fungible_asset::set_frozen_flag(transfer_ref, wallet, false);
+
+        // Emit unfreeze account event
+        event::emit(UnfreezeAccountEvent {
+            admin: admin_addr,
+            account,
+        });
     }
 
     /// Pause or unpause the transfer of Tevi Coin. This checks that the caller is the pauser.
     public entry fun set_pause(pauser: &signer, paused: bool) acquires State {
+        let pauser_addr = signer::address_of(pauser);
         let asset = get_metadata();
-        assert!(object::is_owner(asset, signer::address_of(pauser)), error::permission_denied(ENOT_OWNER));
+        assert!(object::is_owner(asset, pauser_addr), error::permission_denied(ENOT_OWNER));
         let state = borrow_global_mut<State>(object::create_object_address(&@TeviCoin, ASSET_SYMBOL));
         if (state.paused == paused) { return };
         state.paused = paused;
+
+        // Emit set pause event
+        event::emit(SetPauseEvent {
+            admin: pauser_addr,
+            paused,
+        });
     }
 
     /// Assert that the Tevi Coin is not paused.
